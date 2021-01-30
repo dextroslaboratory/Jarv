@@ -1,8 +1,8 @@
 package sr.will.jarvis.module;
 
+import net.noxal.common.cache.Cache;
+import net.noxal.common.cache.CacheEntry;
 import sr.will.jarvis.Jarvis;
-import sr.will.jarvis.cache.Cache;
-import sr.will.jarvis.cache.CacheEntry;
 
 public class CachedModule extends CacheEntry {
     public long guildId;
@@ -10,10 +10,10 @@ public class CachedModule extends CacheEntry {
     private boolean enabled;
 
     public CachedModule(long guildId, String module, boolean enabled) {
+        super(Jarvis.getInstance().config.cache.timeouts.module);
         this.guildId = guildId;
         this.module = module;
         this.enabled = enabled;
-        initialize(Jarvis.getInstance().config.cache.timeouts.module);
     }
 
     public boolean moduleEnabled() {

@@ -5,12 +5,12 @@ import net.dv8tion.jda.core.entities.Guild;
 import net.dv8tion.jda.core.entities.Member;
 import net.dv8tion.jda.core.entities.PrivateChannel;
 import net.dv8tion.jda.core.entities.Role;
+import net.noxal.common.Task;
 import sr.will.jarvis.Jarvis;
 import sr.will.jarvis.modules.elections.ModuleElections;
 import sr.will.jarvis.modules.elections.rest.formManager.FormClose;
 import sr.will.jarvis.modules.elections.rest.formManager.FormCreate;
 import sr.will.jarvis.modules.elections.rest.formManager.FormGet;
-import sr.will.jarvis.thread.JarvisThread;
 
 import java.awt.*;
 import java.time.ZonedDateTime;
@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 public class Election {
     private ModuleElections module;
@@ -48,7 +49,12 @@ public class Election {
         this.formPrefill = formPrefill;
         this.registrants = registrants;
 
-        new JarvisThread(module, this::checkShouldStart).executeAt(module.getTomorrow()).repeat(true, 24 * 60 * 60 * 1000).name("Election-" + name).start();
+        Task.builder(module)
+                .execute(this::checkShouldStart)
+                .delay(System.currentTimeMillis() - module.getTomorrow(), TimeUnit.NANOSECONDS)
+                .repeat(1, TimeUnit.DAYS)
+                .name("Election-" + getElectionName())
+                .submit();
         checkShouldStart();
     }
 
@@ -66,13 +72,17 @@ public class Election {
 
     public void startElection() {
         if (electionState == ElectionState.VOTING) {
-            System.out.println("already voting");
+            module.getLogger().info("Already voting");
             return;
         }
 
         electionState = ElectionState.VOTING;
         module.updateElectionState(guildId, name, electionState);
-        new JarvisThread(module, this::endElection).delay(votingPeriod).name("Election" + name + "-election").start();
+        Task.builder(module)
+                .execute(this::endElection)
+                .delay(votingPeriod, TimeUnit.NANOSECONDS)
+                .name("Election" + name + "-election")
+                .submit();
 
         String electionName = getElectionName();
 
@@ -118,7 +128,7 @@ public class Election {
         Guild guild = Jarvis.getJda().getGuildById(guildId);
 
         for (Member member : guild.getMembers()) {
-            if (member.getUser().getIdLong() == Jarvis.getJda().getSelfUser().getIdLong()) {
+            if (member.getUser().getIdLong() == Jarvis.getJda().getSelfUser().getIdLong() || member.getUser().isBot()) {
                 continue;
             }
 
@@ -151,19 +161,19 @@ public class Election {
         HashMap<String, ArrayList<String>> finalVotes = new HashMap<>();
 
         for (FormGet.Response response : responses.responses) {
-            System.out.println(response.discriminator);
+            module.getLogger().info(response.discriminator);
             if (!memberTags.containsKey(response.discriminator)) {
-                System.out.println("User " + response.discriminator + " thrown out, does not exist on guild");
+                module.getLogger().info("User {} thrown out, does not exist on guild", response.discriminator);
                 continue;
             }
 
             if (!response.auth_token.equals(module.getAuthToken(guildId, memberTags.get(response.discriminator).getUser().getIdLong(), name))) {
-                System.out.println("Tokens for user " + response.discriminator + " do not match");
+                module.getLogger().info("Tokens for user {} do not match", response.discriminator);
                 continue;
             }
 
             if (finalVotes.containsKey(response.discriminator)) {
-                System.out.println("Overriding vote from user " + response.discriminator);
+                module.getLogger().info("Overriding vote from user {}", response.discriminator);
                 finalVotes.remove(response.discriminator);
             }
             finalVotes.put(response.discriminator, response.votes);
@@ -215,7 +225,7 @@ public class Election {
     public void addVoteByDiscriminator(String discriminator) {
         Registrant registrant = getRegistrantByDiscriminator(discriminator);
         if (registrant == null) {
-            System.out.println("registrant is null!?");
+            module.getLogger().info("Registrant is null!?");
             return;
         }
 

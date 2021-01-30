@@ -1,20 +1,25 @@
 package sr.will.jarvis.modules.levels;
 
+import net.dv8tion.jda.core.entities.User;
+import sr.will.jarvis.Jarvis;
+
 public class XPUser {
     private ModuleLevels module;
     public long guildId;
     public long userId;
     public long xp;
     public int pos;
-    public int pos_total;
 
-    public XPUser(ModuleLevels module, long guildId, long userId, long xp, int pos, int pos_total) {
+    public XPUser(ModuleLevels module, long guildId, long userId, long xp, int pos) {
         this.module = module;
         this.guildId = guildId;
         this.userId = userId;
         this.xp = xp;
         this.pos = pos;
-        this.pos_total = pos_total;
+    }
+
+    public User getUser() {
+        return Jarvis.getJda().getUserById(userId);
     }
 
     public int getLevel() {
@@ -31,5 +36,9 @@ public class XPUser {
 
     public long getUserLevelXp() {
         return xp - getLevelXp();
+    }
+
+    public long getNeededXp() {
+        return getNextLevelXp() - getLevelXp();
     }
 }

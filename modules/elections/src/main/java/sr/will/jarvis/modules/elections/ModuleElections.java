@@ -71,6 +71,11 @@ public class ModuleElections extends Module {
         try {
             ResultSet result = Jarvis.getDatabase().executeQuery("SELECT guild, name, channel, role, winner_count, day_of_month, voting_period, election_state, form_id, form_prefill, registrants from elections;");
             while (result.next()) {
+                // Ignore guilds that jarvis is not in
+                if (Jarvis.getJda().getGuildById(result.getLong("guild")) == null) {
+                    continue;
+                }
+
                 elections.add(new Election(
                         this,
                         result.getLong("guild"),
@@ -141,7 +146,7 @@ public class ModuleElections extends Module {
     public FormCreate createPoll(String name, ArrayList<Registrant> registrants) {
         String requestString = formManagerUrl + "?action=create&name=" + URLEncode(name) + getRegistrantsAsChoiceString(registrants);
 
-        Jarvis.debug(requestString);
+        Jarvis.getLogger().debug(requestString);
         try {
             String string = Unirest.get(requestString).asString().getBody();
             return gson.fromJson(string, FormCreate.class);
@@ -154,7 +159,7 @@ public class ModuleElections extends Module {
 
     public FormClose closePoll(String formId) {
         String requestString = formManagerUrl + "?action=close&formId=" + formId;
-        Jarvis.debug(requestString);
+        Jarvis.getLogger().debug(requestString);
         try {
             String string = Unirest.get(requestString).asString().getBody();
             return gson.fromJson(string, FormClose.class);
@@ -166,7 +171,7 @@ public class ModuleElections extends Module {
 
     public FormGet getResponses(String formId) {
         String requestString = formManagerUrl + "?formId=" + formId;
-        Jarvis.debug(requestString);
+        Jarvis.getLogger().debug(requestString);
         try {
             String string = Unirest.get(requestString).asString().getBody();
             return gson.fromJson(string, FormGet.class);

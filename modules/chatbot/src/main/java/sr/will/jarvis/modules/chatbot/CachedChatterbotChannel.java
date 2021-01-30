@@ -1,17 +1,17 @@
 package sr.will.jarvis.modules.chatbot;
 
+import net.noxal.common.cache.Cache;
+import net.noxal.common.cache.CacheEntry;
 import sr.will.jarvis.Jarvis;
-import sr.will.jarvis.cache.Cache;
-import sr.will.jarvis.cache.CacheEntry;
 
 public class CachedChatterbotChannel extends CacheEntry {
     public long channelId;
     private boolean chatterbotChannel;
 
     public CachedChatterbotChannel(long channelId, boolean chatterbotChannel) {
+        super(Jarvis.getInstance().config.cache.timeouts.chatterbotChannels);
         this.channelId = channelId;
         this.chatterbotChannel = chatterbotChannel;
-        initialize(Jarvis.getInstance().config.cache.timeouts.chatterbotChannels);
     }
 
     public boolean isChatterbotChannel() {

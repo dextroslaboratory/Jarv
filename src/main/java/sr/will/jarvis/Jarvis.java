@@ -4,35 +4,38 @@ import net.dv8tion.jda.core.AccountType;
 import net.dv8tion.jda.core.JDA;
 import net.dv8tion.jda.core.JDABuilder;
 import net.dv8tion.jda.core.entities.Game;
+import net.noxal.common.Task;
+import net.noxal.common.cache.Cache;
 import net.noxal.common.config.JSONConfigManager;
 import net.noxal.common.sql.Database;
-import sr.will.jarvis.cache.Cache;
+import net.noxal.common.sql.Query;
+import net.noxal.common.util.DateUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import sr.will.jarvis.config.Config;
 import sr.will.jarvis.event.EventHandlerJarvis;
 import sr.will.jarvis.manager.*;
 import sr.will.jarvis.service.InputReaderService;
-import sr.will.jarvis.thread.JarvisThread;
 
 import javax.security.auth.login.LoginException;
-import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 public class Jarvis {
     private static Jarvis instance;
 
-    private JSONConfigManager configManager;
+    private JSONConfigManager<Config> configManager;
     public Config config;
 
-    public ThreadManager threadManager;
     public InputReaderService inputReaderService;
     public CommandConsoleManager consoleManager;
     public Database database;
-    public Cache cache;
     public EventManager eventManager;
     public CommandManager commandManager;
     public ModuleManager moduleManager;
     public Stats stats;
     private JDA jda;
+    private static final Logger logger = LoggerFactory.getLogger("Jarvis");
 
     public boolean running = true;
 
@@ -41,10 +44,9 @@ public class Jarvis {
     public Jarvis() {
         instance = this;
 
-        configManager = new JSONConfigManager(this, "jarvis.json", "config", Config.class);
         stats = new Stats();
+        configManager = new JSONConfigManager<>(this, "jarvis.json", "config", new Config());
 
-        threadManager = new ThreadManager(this);
         consoleManager = new CommandConsoleManager(this);
         consoleManager.registerCommands();
         inputReaderService = new InputReaderService(consoleManager);
@@ -59,8 +61,7 @@ public class Jarvis {
 
         database = new Database();
         database.addHook(stats::processQuery);
-
-        cache = new Cache();
+        Query.setDatabase(database);
 
         reload();
 
@@ -88,26 +89,24 @@ public class Jarvis {
     }
 
     public void finishStartup() {
-        new JarvisThread(null, () -> {
+        Task.builder(this).execute(() -> {
             int rand = ThreadLocalRandom.current().nextInt(0, config.discord.statusMessages.size());
             Jarvis.getJda().getPresence().setGame(Game.playing(config.discord.statusMessages.get(rand)));
         })
-                .name("StatusChanger")
-                .repeat(true, config.discord.statusMessageInterval * 1000)
-                .silent(true)
-                .start();
+                .repeat(config.discord.statusMessageInterval, TimeUnit.SECONDS)
+                .submit();
 
         moduleManager.getModules().forEach((s -> moduleManager.getModule(s).finishStart()));
 
-        System.out.println("Finished starting Jarvis v" + VERSION + "!");
+        logger.info("Finished starting Jarvis v{} in {}!", VERSION, DateUtils.formatDateDiff(Stats.startTime));
     }
 
     public void stop() {
-        System.out.println("Stopping!");
+        logger.info("Stopping!");
 
         running = false;
 
-        threadManager.stop();
+
         moduleManager.getModules().forEach((s -> moduleManager.getModule(s).stop()));
 
         jda.shutdown();
@@ -118,15 +117,11 @@ public class Jarvis {
 
     public void reload() {
         configManager.reloadConfig();
-        config = (Config) configManager.getConfig();
+        config = configManager.getConfig();
 
-        cache.restart();
+        Cache.setCleanupInterval(config.cache.cleanupInterval, TimeUnit.SECONDS);
+        Cache.restart();
         stats.restart();
-
-        if (config.serverUUID.equals("")) {
-            config.serverUUID = UUID.randomUUID().toString();
-            configManager.saveConfig();
-        }
 
         database.setDebug(false);
         database.setCredentials(config.sql.host, config.sql.database, config.sql.user, config.sql.password);
@@ -149,9 +144,7 @@ public class Jarvis {
         moduleManager.getModules().forEach((s -> moduleManager.getModule(s).reload()));
     }
 
-    public static void debug(String message) {
-        if (Jarvis.getInstance().config.debug) {
-            System.out.println("[DEBUG] " + message);
-        }
+    public static Logger getLogger() {
+        return logger;
     }
 }

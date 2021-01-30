@@ -1,8 +1,8 @@
 package sr.will.jarvis.modules.levels.cache;
 
+import net.noxal.common.cache.Cache;
+import net.noxal.common.cache.CacheEntry;
 import sr.will.jarvis.Jarvis;
-import sr.will.jarvis.cache.Cache;
-import sr.will.jarvis.cache.CacheEntry;
 
 public class CachedUserXp extends CacheEntry {
     public long guildId;
@@ -10,15 +10,19 @@ public class CachedUserXp extends CacheEntry {
     private long xp;
 
     public CachedUserXp(long guildId, long userId, long xp) {
+        super(Jarvis.getInstance().config.cache.timeouts.userXp);
         this.guildId = guildId;
         this.userId = userId;
         this.xp = xp;
-        initialize(Jarvis.getInstance().config.cache.timeouts.userXp);
     }
 
     public long getXp() {
         updateLastUsed();
         return xp;
+    }
+
+    public void addXp(long toAdd) {
+        this.xp = xp + toAdd;
     }
 
     public static CachedUserXp getEntry(long guildId, long userId) {

@@ -6,12 +6,13 @@ import net.dv8tion.jda.core.entities.Guild;
 import net.dv8tion.jda.core.entities.Member;
 import net.dv8tion.jda.core.entities.Role;
 import net.dv8tion.jda.core.entities.TextChannel;
+import net.dv8tion.jda.core.exceptions.HierarchyException;
 import net.dv8tion.jda.core.exceptions.PermissionException;
+import net.noxal.common.Task;
 import net.noxal.common.util.DateUtils;
 import sr.will.jarvis.Jarvis;
 import sr.will.jarvis.modules.admin.CachedMute;
 import sr.will.jarvis.modules.admin.ModuleAdmin;
-import sr.will.jarvis.thread.JarvisThread;
 
 import java.awt.*;
 import java.sql.ResultSet;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class MuteManager {
     private ModuleAdmin module;
@@ -122,28 +124,32 @@ public class MuteManager {
 
     public void setup(Guild guild) {
         try {
-            deleteOldRoles(guild);
-            createMuteRole(guild);
+            long muteRole = getMuteRole(guild.getIdLong());
+            deleteOldRoles(guild, muteRole);
+            createMuteRole(guild, muteRole);
         } catch (PermissionException e) {
             e.printStackTrace();
         }
     }
 
     // Delete roles that have not been added to the database
-    private void deleteOldRoles(Guild guild) {
+    private void deleteOldRoles(Guild guild, long muteRole) {
         List<Role> roles = new ArrayList<>();
         roles.addAll(guild.getRolesByName("Jarvis_Mute", true));
         roles.addAll(guild.getRolesByName("new role", true));
 
         // Do not delete role that is in the db
-        long muteRole = getMuteRole(guild.getIdLong());
         if (muteRole != 0) {
             // Role to be deleted exists in db, ignoring
             roles.remove(guild.getRoleById(muteRole));
         }
 
         for (Role role : roles) {
-            role.delete().reason("Jarvis Mute Role - Deleting old Role").queue();
+            try {
+                role.delete().reason("Jarvis Mute Role - Deleting old Role").queue();
+            } catch (HierarchyException e) {
+                module.getLogger().error("Cannot delete old mute role {} in guild {}, role is above any Jarvis groups.", role, role.getGuild());
+            }
         }
     }
 
@@ -160,9 +166,7 @@ public class MuteManager {
         return 0;
     }
 
-    private void createMuteRole(Guild guild) {
-        long muteRole = getMuteRole(guild.getIdLong());
-
+    private void createMuteRole(Guild guild, long muteRole) {
         // If role does not exist on the guild any more, remove it from the database
         if (muteRole != 0 && guild.getRoleById(muteRole) == null) {
             Jarvis.getDatabase().execute("DELETE FROM mute_roles WHERE (guild = ? AND role = ?);", guild.getIdLong(), muteRole);
@@ -177,7 +181,7 @@ public class MuteManager {
         }
 
         if (!guild.getMember(Jarvis.getJda().getSelfUser()).hasPermission(Permission.MANAGE_ROLES)) {
-            System.out.println("No permission " + Permission.MANAGE_ROLES.getName() + " in guild " + guild.getName() + ", cannot create mute role.");
+            module.getLogger().error("No permission {} in guild {}, cannot create mute role.", Permission.MANAGE_ROLES.getName(), guild);
             return;
         }
 
@@ -194,7 +198,7 @@ public class MuteManager {
 
         for (TextChannel channel : channels) {
             if (!guild.getMember(Jarvis.getJda().getSelfUser()).hasPermission(channel, Permission.MANAGE_ROLES)) {
-                System.out.println("No permission " + Permission.MANAGE_PERMISSIONS.getName() + " in guild " + guild.getName() + ", channel " + channel.getName() + ", cannot add role to channel.");
+                module.getLogger().error("No permission {} in guild {}, channel {}, cannot add role to channel.", Permission.MANAGE_PERMISSIONS.getName(), guild, channel);
                 continue;
             }
 
@@ -218,7 +222,7 @@ public class MuteManager {
         HashMap<Long, Long> mutes = getMutes(guild.getIdLong());
 
         if (mutes.size() > 0) {
-            System.out.println("Processing " + mutes.size() + " muted members for " + guild.getName());
+            module.getLogger().info("Processing {} muted members for {}", mutes.size(), guild);
         }
 
         for (long userId : mutes.keySet()) {
@@ -251,6 +255,10 @@ public class MuteManager {
     }
 
     private void startUnmuteThread(final long guildId, final long userId, final long duration) {
-        new JarvisThread(module, () -> unmute(guildId, userId)).executeAt(duration).name("Mute").start();
+        Task.builder(module)
+                .execute(() -> unmute(guildId, userId))
+                .delay(System.currentTimeMillis() - duration, TimeUnit.NANOSECONDS)
+                .name("Unmute thread")
+                .submit();
     }
 }

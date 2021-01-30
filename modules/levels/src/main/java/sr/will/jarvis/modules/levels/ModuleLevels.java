@@ -75,11 +75,9 @@ public class ModuleLevels extends Module {
     }
 
     public XPUser getXPUser(long guildId, long userId) {
-        HashMap<Integer, XPUser> leaderboard = getLeaderboard(guildId);
+        ArrayList<XPUser> leaderboard = getLeaderboard(guildId);
 
-        for (int pos : leaderboard.keySet()) {
-            XPUser user = leaderboard.get(pos);
-
+        for (XPUser user : leaderboard) {
             if (user.userId == userId) {
                 return user;
             }
@@ -125,16 +123,15 @@ public class ModuleLevels extends Module {
         return false;
     }
 
-    public HashMap<Integer, XPUser> getLeaderboard(long guildId) {
-        HashMap<Integer, XPUser> leaderboard = new HashMap<>();
+    public ArrayList<XPUser> getLeaderboard(long guildId) {
+        ArrayList<XPUser> leaderboard = new ArrayList<>();
 
         try {
-            ResultSet result = Jarvis.getDatabase().executeQuery("SELECT user, xp, (SELECT COUNT(id) FROM levels WHERE (guild = ? AND xp >= 0)) AS pos_total FROM levels WHERE (guild = ? AND xp >= 0) ORDER BY xp DESC;", guildId, guildId);
+            ResultSet result = Jarvis.getDatabase().executeQuery("SELECT user, xp FROM levels WHERE (guild = ? AND xp >= 0) ORDER BY xp DESC;", guildId);
 
-            int pos = 1;
             while (result.next()) {
-                leaderboard.put(pos, new XPUser(this, guildId, result.getLong("user"), result.getLong("xp"), pos, result.getInt("pos_total")));
-                pos += 1;
+                if (Jarvis.getJda().getUserById(result.getLong("user")) == null) continue;
+                leaderboard.add(new XPUser(this, guildId, result.getLong("user"), result.getLong("xp"), leaderboard.size() + 1));
             }
 
         } catch (SQLException e) {
@@ -226,15 +223,23 @@ public class ModuleLevels extends Module {
         double timeMultiplier = ((double) timeFromLast / 1000.0) / 60.0;
         double correctedTimeMultiplier = Math.min(1.0, timeMultiplier);
 
-        //System.out.println("length: " + lengthMultiplier);
-        //System.out.println("time:   " + timeMultiplier);
-        //System.out.println("timeco: " + correctedTimeMultiplier);
+        //getLogger().debug("length: {}", lengthMultiplier);
+        //getLogger().debug("time:   {}", timeMultiplier);
+        //getLogger().debug("timeco: {}", correctedTimeMultiplier);
 
         long xpGained = Math.round(baseAmount * lengthMultiplier * correctedTimeMultiplier);
 
-        //System.out.println("gained: " + xpGained);
+        //getLogger().debug("gained: {}", xpGained);
+
+        if (xpGained == 0) {
+            return;
+        }
 
         Jarvis.getDatabase().execute("UPDATE levels SET xp = xp + ? WHERE (guild = ? AND user = ?);", xpGained, guildId, userId);
+        CachedUserXp c = CachedUserXp.getEntry(guildId, userId);
+        if (c != null) {
+            c.addXp(xpGained);
+        }
 
         if (getLevelFromXp(xp + xpGained) > getLevelFromXp(xp) && !channelSilenced(message.getChannel().getIdLong())) {
             message.getChannel().sendMessage("Congratulations! " + message.getJDA().getUserById(userId).getAsMention() + " has reached level " + getLevelFromXp(xp + xpGained)).queue();
@@ -301,7 +306,7 @@ public class ModuleLevels extends Module {
             //double level = (double) x;
             //long xp = Math.round((5.0 / 6.0) * level * (2.0 * level * level + (27.0 * level) + 91.0));
             levels.put(x, xp);
-            //System.out.println(x + " = " + levels.get(x));
+            //getLogger().debug("{} = {}", x, levels.get(x));
         }
     }
 
